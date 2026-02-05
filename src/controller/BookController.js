@@ -6,7 +6,7 @@ const calculateFine = require("../utils/calculateFine");
 
 
 const returnBook=async(req,res)=>{
-    const issue=await IssueBorrow.findById(req.params.id);
+    const issue=await IssueBorrow.findById(req.params.id).populate('book');
     
     if(!issue){
         return res.status(400).json({message:'Issue record not found'})
@@ -18,7 +18,7 @@ const returnBook=async(req,res)=>{
     }
     issue.returnDate=new Date();
 
-    const fine=calculateFine(issue)
+    const fine=calculateFine(issue.dueDate,issue.returnDate)
 
     issue.fineAmount=fine;
     issue.status=fine > 0 ? 'overdue':'returned'
@@ -26,6 +26,7 @@ const returnBook=async(req,res)=>{
     issue.book.availableCopies+=1;
     issue.book.status='available'
     await issue.save()
+    await issue.book.save()
 
     res.status(200).json({
         message:'book returned successfully',
@@ -38,7 +39,7 @@ const BORROW_DAYS=7;
 const borrowBook=async(req,res)=>{
 
    try {
-     const {userId,bookId}=req.body;
+     const {userId}=req.user;
      const activeBorrows=await IssueBorrow.countDocuments({
          userId:userId,
          returnDate:null
@@ -49,14 +50,14 @@ const borrowBook=async(req,res)=>{
              message:"Borrow limit reached"
          })
      }
- 
+     const bookId=req.params.id;
      const book=await Book.findById(bookId);
      if(!book){
          return res.status(404).json({message:"book not found"})
      }
  
      if(book.availableCopies<=0){
-         return res.status(404).json({message:"Book not availabel"})
+         return res.status(404).json({message:"Book not available"})
      }
      
      const dueDate=new Date();
@@ -66,12 +67,13 @@ const borrowBook=async(req,res)=>{
          book:bookId,
          issueDate:new Date(),
          returnDate:null,
+         dueDate:dueDate,
          status:'issued'
      })
  
      book.availableCopies -=1;
      if(book.availableCopies === 0){
-         book.status='unavailabel'
+         book.status='unavailable'
      }
      await book.save();
  
@@ -104,7 +106,7 @@ const createBook=async(req,res)=>{
         }
         const {title,author,totalCopies}=req.body;
         
-        if(!title|!author|!totalCopies){
+        if(!title||!author||!totalCopies){
             return res.status(400).json({
                 message:'all book fields are required',
                 success:false
@@ -116,7 +118,10 @@ const createBook=async(req,res)=>{
             title,
             author,
             totalCopies,
-            coverImage:url,
+            coverImage:{
+                url:url,
+                publicId:publicId
+            },
             availableCopies:totalCopies,
             status:'available'
     
@@ -160,7 +165,7 @@ const updateBook=async(req,res)=>{
          book.availableCopies +=diff
      }
  
-     book.status=book.availableCopies > 0 ?'availabel':'unavailabel'
+     book.status=book.availableCopies > 0 ?'available':'unavailable'
  
      await book.save();
      res.status(200).json({
@@ -240,4 +245,4 @@ const getAllBook=async(req,res)=>{
 }
 
 
-module.exports={borrowBook,returnBook}
+module.exports={borrowBook,returnBook,createBook,deleteBook,updateBook,getAllBook}
